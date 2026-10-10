@@ -1,0 +1,121 @@
+# MiPFusion -- component ablation.
+#
+# Components (Sec. 2): MiPSEF (cross-scale alignment), EG-SpaMoE (edge-guided
+# spatial detail), HSSF-FFN (spectral consistency) + the phased composite loss.
+#
+# Cell selection:
+#   Full model:
+#     python train.py -opt options/train/MiPFusion_Ablation.yml
+#   w/o MiPSEF:
+#     --force_yml network_g.use_mipsef=false
+#   w/o EG-SpaMoE:
+#     --force_yml network_g.use_eg_spamoe=false
+#   w/o HSSF-FFN:
+#     --force_yml network_g.use_hssf=false
+#   w/o the load-balancing term (always off):
+#     --force_yml train.composite_opt.lambda_bal=0.0
+#   w/o the SAM term:
+#     --force_yml train.composite_opt.lambda_sam=0.0
+#   always-on load balancing (phased schedule disabled):
+#     --force_yml train.composite_opt.warmup_epochs=1000000
+#
+# Routing hyper-parameters worth ablating:
+#   --force_yml network_g.threshold=0.9        # stricter sparsity in Eq. (4)
+#   --force_yml network_g.num_blocks=16        # K source/sink blocks
+#   --force_yml network_g.topk=1               # single-expert routing
+
+name: MiPFusion_Ablation
+model_type: MiPFusionModel
+scale: 4
+num_gpu: 1
+manual_seed: 10
+
+datasets:
+  train:
+    name: CAVE_Train
+    type: MHIFDataset
+    dataroot_hsi: datasets/CAVE/train/hsi
+    dataroot_msi: ~
+    hsi_key: hsi
+    ms_channels: 4
+    scale: 4
+    patch_size: 64
+    phase: train
+    use_flip: true
+    norm: true
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 8
+  val:
+    name: CAVE_Test
+    type: MHIFDataset
+    dataroot_hsi: datasets/CAVE/test/hsi
+    dataroot_msi: ~
+    hsi_key: hsi
+    ms_channels: 4
+    scale: 4
+    patch_size: ~
+    phase: val
+    norm: true
+
+network_g:
+  type: MiPFusion
+  ms_channels: 4
+  hsi_channels: 31
+  dim: 64
+  num_levels: 3
+  num_blocks: 8
+  threshold: 0.5
+  num_experts: 4
+  topk: 2
+  scale: 4
+  use_mipsef: true
+  use_eg_spamoe: true
+  use_hssf: true
+
+path:
+  pretrain_network_g: ~
+
+train:
+  ema_decay: 0.999
+  optim_g:
+    type: AdamW
+    lr: !!float 4e-4
+    weight_decay: !!float 1e-2
+    betas: [0.9, 0.99]
+  scheduler:
+    type: MultiStepLR
+    milestones: [150, 220, 270]
+    gamma: 0.5
+  total_epoch: 300
+  composite_opt:
+    l1_weight: 1.0
+    lambda_sam: 0.1
+    lambda_bal: 0.01
+    warmup_epochs: 10
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+  val_freq: !!float 1e4
+  save_checkpoint_freq: !!float 1e4
+
+val:
+  save_img: true
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 1e4
+  use_tb_logger: true
+
+dist_params:
+  backend: nccl
+  port: 29500

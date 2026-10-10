@@ -1,0 +1,37 @@
+# MiPFusion dependencies
+#
+# BasicSR is used as a real external dependency; nothing in site-packages is
+# patched. The local `models` package registers the architectures into the
+# official registries on import.
+
+# ---- core ---------------------------------------------------------------
+torch>=2.1.0
+torchvision>=0.16.0
+
+# ---- BasicSR 1.4.2 runtime dependencies ---------------------------------
+numpy<2
+opencv-python
+tqdm
+pyyaml
+scipy          # required to read the .mat reference cubes
+lmdb
+scikit-image
+pillow
+requests
+addict
+future
+
+# ---- install basicsr itself ---------------------------------------------
+# pip install basicsr==1.4.2
+#
+# If pip tries to downgrade an existing CUDA torch build, install with --no-deps
+# and provide the packages above manually:
+#   pip install basicsr==1.4.2 --no-deps
+#
+# NOTE on basicsr 1.4.2 + modern torch (>=2.6): basicsr imports
+# torchvision.transforms.functional_tensor, which was removed in torchvision 0.17.
+# Two options:
+#   (a) pin torchvision<0.17 (torch<=2.5),
+#   (b) or patch the import once:
+#       sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' \
+#           $(python -c "import basicsr,os;print(os.path.dirname(basicsr.__file__))")/data/degradations.py

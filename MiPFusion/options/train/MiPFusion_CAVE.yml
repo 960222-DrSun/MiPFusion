@@ -1,0 +1,115 @@
+# MiPFusion -- training at x4 on Chikusei / CAVE / PaviaU.
+# Paper: Table 1, 1.39 M parameters, 5.12 ms latency, best on every metric of all
+#        three datasets (+0.30/+0.30/+0.62 dB PSNR over the second-best method).
+#
+# Usage:
+#   python train.py -opt options/train/MiPFusion_CAVE.yml
+#
+# Switch dataset with --force_yml:
+#   --force_yml datasets.train.dataroot_hsi=/data/PaviaU/train/hsi
+#               datasets.val.dataroot_hsi=/data/PaviaU/test/hsi
+#               network_g.hsi_channels=103
+#
+# Band counts: CAVE 31 | PaviaU 103 | Chikusei 128
+
+name: MiPFusion_CAVE
+model_type: MiPFusionModel
+scale: 4
+num_gpu: 1
+manual_seed: 10
+
+datasets:
+  train:
+    name: CAVE_Train
+    type: MHIFDataset
+    dataroot_hsi: datasets/CAVE/train/hsi
+    dataroot_msi: ~            # None -> synthesise with the Wald protocol
+    hsi_key: hsi
+    ms_channels: 4             # Wald protocol: 4 multispectral bands
+    scale: 4
+    patch_size: 64             # 64 x 64 patches at x4
+    phase: train
+    use_flip: true
+    norm: true
+    num_worker_per_gpu: 4
+    batch_size_per_gpu: 8
+    dataset_enlarge_ratio: 1
+
+  val:
+    name: CAVE_Test
+    type: MHIFDataset
+    dataroot_hsi: datasets/CAVE/test/hsi
+    dataroot_msi: ~
+    hsi_key: hsi
+    ms_channels: 4
+    scale: 4
+    patch_size: ~              # full-resolution evaluation
+    phase: val
+    norm: true
+
+network_g:
+  type: MiPFusion
+  ms_channels: 4               # c
+  hsi_channels: 31             # C: 31 (CAVE) | 103 (PaviaU) | 128 (Chikusei)
+  dim: 64                      # D
+  num_levels: 3
+  num_blocks: 8                # K blocks in the sparse cross-scale routing
+  threshold: 0.5               # P: significance threshold of Eq. (4)
+  num_experts: 4               # n
+  topk: 2                      # k
+  scale: 4
+  use_mipsef: true             # component ablation switches
+  use_eg_spamoe: true
+  use_hssf: true
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+train:
+  ema_decay: 0.999
+  optim_g:
+    type: AdamW
+    lr: !!float 4e-4           # paper: AdamW 4e-4
+    weight_decay: !!float 1e-2 # paper: weight decay 1e-2
+    betas: [0.9, 0.99]
+  scheduler:
+    type: MultiStepLR
+    milestones: [150, 220, 270]   # in epochs, of the 300-epoch schedule
+    gamma: 0.5
+  total_epoch: 300            # paper: 300 epochs
+  # ---- phased composite loss (Eq. 7) -----------------------------------
+  composite_opt:
+    l1_weight: 1.0
+    lambda_sam: 0.1           # spectral angle mapper term
+    lambda_bal: 0.01          # load balancing, early stage only
+    warmup_epochs: 10         # L_bal active for e < 10, removed afterwards
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+  val_freq: !!float 1e4
+  save_checkpoint_freq: !!float 1e4
+
+val:
+  save_img: true
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+    # SAM and ERGAS are computed directly in MiPFusionModel.nondist_validation
+
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 1e4
+  use_tb_logger: true
+
+dist_params:
+  backend: nccl
+  port: 29500

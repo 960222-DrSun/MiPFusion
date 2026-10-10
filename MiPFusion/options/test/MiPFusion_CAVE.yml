@@ -1,0 +1,63 @@
+# MiPFusion -- evaluation at x4 on Chikusei / CAVE / PaviaU.
+# Metrics: PSNR, SSIM, SAM (lower better), ERGAS (lower better). Table 1.
+#
+# Usage:
+#   python basicsr/test.py -opt options/test/MiPFusion_CAVE.yml
+
+name: MiPFusion_CAVE_Test
+model_type: MiPFusionModel
+scale: 4
+num_gpu: 1
+manual_seed: 10
+
+datasets:
+  test:
+    name: CAVE
+    type: MHIFDataset
+    dataroot_hsi: datasets/CAVE/test/hsi
+    dataroot_msi: ~
+    hsi_key: hsi
+    ms_channels: 4
+    scale: 4
+    patch_size: ~              # full-resolution evaluation
+    phase: test
+    norm: true
+    # Chikusei: 680 x 680 test patches, 128 bands
+    # PaviaU  : top 340 x 340 region,    103 bands
+
+network_g:
+  type: MiPFusion
+  ms_channels: 4
+  hsi_channels: 31             # 31 (CAVE) | 103 (PaviaU) | 128 (Chikusei)
+  dim: 64
+  num_levels: 3
+  num_blocks: 8
+  threshold: 0.5
+  num_experts: 4
+  topk: 2
+  scale: 4
+  use_mipsef: true
+  use_eg_spamoe: true
+  use_hssf: true
+
+path:
+  pretrain_network_g: experiments/MiPFusion_CAVE/models/net_g_latest.pth
+  strict_load_g: true
+  param_key_g: params
+
+val:
+  save_img: true
+  suffix: ~
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+dist_params:
+  backend: nccl
+  port: 29500
